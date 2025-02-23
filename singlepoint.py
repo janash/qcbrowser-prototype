@@ -263,12 +263,15 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
                 stop=start_idx + PAGE_SIZE,
                 get_rdkit=True
             )
-            df_filtered = df.dropna(subset=["RDKit Molecule"])
+            df_filtered = df.dropna(subset=["RDKit Molecule"], inplace=False)
             
             content_output.clear_output()
             with content_output:
                 if len(df_filtered) > 0:
-                    df_filtered["SMILES"] = df_filtered["RDKit Molecule"].apply(Chem.MolToSmiles)
+
+                    # Hide the warning. The chained assignment is fine.
+                    with pd.option_context("mode.chained_assignment", None):
+                        df_filtered["SMILES"] = df_filtered["RDKit Molecule"].apply(Chem.MolToSmiles)
                     display(mols2grid.display(df_filtered, size=(200, 200)))
                 else:
                     display(HTML(
