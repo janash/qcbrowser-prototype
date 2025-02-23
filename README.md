@@ -3,8 +3,12 @@ A prototype for structures and widgets for browsing datasets from QCArchive.
 
 Create an environment with the following command:
 ```bash
-conda create -n qcbrowser-prototype -c conda-forge python=3.12 jupyterlab qcportal openff-toolkit mols2grid
+conda create -n qcbrowser-prototype -c conda-forge python=3.12 jupyterlab qcportal openff-toolkit mols2grid nglview
 ```
+
+See `demo.ipynb` for a demonstration of the pandas tools and widgets.
+
+## Pandas DataFrame Tools
 
 ## Widgets
 
@@ -23,8 +27,8 @@ The default view shows the specificatiosn with each specification having an expa
 
 **View Entries**
 
-You can view the entries as a list and click to view the QCElemental representation.
-![images/dataset_browser_entries.png](images/dataset_browser_entries.png)
+You can view the entries as the QCElemental representation.
+![images/dataset_browser_entries.png](images/qcmol_grid.png)
 
 The OpenFF Toolkit is also used internally to convert entries to RDKit. If the dataset has entries that can be converted, you can browse the entries in a grid view using `mols2grid`.
 ![images/dataset_browser_rdkit.png](images/dataset_browser_entries_rdkit.png)

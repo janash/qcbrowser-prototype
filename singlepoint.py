@@ -171,29 +171,28 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         display(grid)
 
     def _create_entry_table(self):
-        """Create a paginated table of entry names with clickable entries."""
-        PAGE_SIZE = 12
+        """Create a paginated table of molecules with QC and RDKit views."""
+        PAGE_SIZE = 5  # 1 row x 5 columns
         total_entries = self.dataset_processor.n_entries
         total_pages = (total_entries + PAGE_SIZE - 1) // PAGE_SIZE
         current_page = [0]
-        self._num_headers = 1
 
         # Check if we have any RDKit molecules
-        sample_df = self.dataset_processor.get_entry_df(stop=5, get_rdkit=True)
+        sample_df = self.dataset_processor.get_entry_df(stop=100, get_rdkit=True)
         has_rdkit = sample_df["RDKit Molecule"].notna().any()
 
-        # Create view toggle
+        # Create view toggle with new names
         view_toggle = widgets.ToggleButtons(
-            options=['List', 'Grid'] if has_rdkit else ['List'],
+            options=['View QC Molecules', 'View RDKit Molecules'] if has_rdkit else ['View QC Molecules'],
             description='View:',
-            value='List',
+            value='View QC Molecules',  # Default to QC view
             layout=widgets.Layout(margin='0 0 10px 0')
         )
 
         if not has_rdkit:
             view_message = widgets.HTML(
                 '<div style="color: #666; font-style: italic; margin-left: 10px;">'
-                'Grid view unavailable: No RDKit molecules could be created</div>'
+                'RDKit view unavailable: No RDKit molecules could be created</div>'
             )
             view_controls = widgets.HBox([view_toggle, view_message])
         else:
@@ -219,44 +218,56 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
             layout=widgets.Layout(padding='5px 10px')
         )
 
-        # Create content areas
+        # Create content area
         content_output = widgets.Output()
-        table_output = widgets.Output()
-        details_output = widgets.Output()
 
-        def show_entry_details(entry_name):
-            details_output.clear_output()
-            with details_output:
-                print(f"Showing entry {entry_name}")
-                entry = self.dataset_processor.ds.get_entry(entry_name)
-                display(entry.molecule)
-
-        def update_list_view(page_num):
+        def update_qc_grid_view(page_num):
+            """Update grid with QC molecule representations."""
             start_idx = page_num * PAGE_SIZE
             df = self.dataset_processor.get_entry_df(
                 start=start_idx,
                 stop=start_idx + PAGE_SIZE
             )
             
-            buttons = widgets.VBox([
-                widgets.Button(
-                    description=str(row['Entry Name']),
-                    layout=widgets.Layout(width='auto')
+            content_output.clear_output()
+            with content_output:
+                # Create grid items
+                grid_items = []
+                for _, row in df.iterrows():
+                    entry_name = str(row['Entry Name'])
+                    
+                    # Create cell output for molecule
+                    cell_output = widgets.Output()
+                    with cell_output:
+                        entry = self.dataset_processor.ds.get_entry(entry_name)
+                        display(entry.molecule)
+                    
+                    # Create cell with name and molecule
+                    cell = widgets.VBox([
+                        widgets.HTML(f'<div style="text-align: center; font-weight: bold;">{entry_name}</div>'),
+                        cell_output
+                    ], layout=widgets.Layout(
+                        border='1px solid #ddd',
+                        margin='5px',
+                        padding='10px',
+                        width='auto'
+                    ))
+                    
+                    grid_items.append(cell)
+                
+                # Create grid layout
+                grid = widgets.GridBox(
+                    grid_items,
+                    layout=widgets.Layout(
+                        grid_template_columns='repeat(5, 1fr)',
+                        grid_gap='0px',
+                        width='100%'
+                    )
                 )
-                for _, row in df.iterrows()
-            ])
-            
-            for button in buttons.children:
-                button.on_click(
-                    lambda b, name=button.description: show_entry_details(name)
-                )
-            
-            table_output.clear_output()
-            with table_output:
-                display(HTML("<table><tr><th>Entry Name</th></tr></table>"))
-                display(buttons)
+                display(grid)
 
-        def update_grid_view(page_num):
+        def update_rdkit_grid_view(page_num):
+            """Update grid with RDKit molecule representations."""
             start_idx = page_num * PAGE_SIZE
             df = self.dataset_processor.get_entry_df(
                 start=start_idx,
@@ -268,7 +279,6 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
             content_output.clear_output()
             with content_output:
                 if len(df_filtered) > 0:
-
                     # Hide the warning. The chained assignment is fine.
                     with pd.option_context("mode.chained_assignment", None):
                         df_filtered["SMILES"] = df_filtered["RDKit Molecule"].apply(Chem.MolToSmiles)
@@ -280,19 +290,24 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
                     ))
 
         def update_view(view_type, page_num):
-            if view_type == 'List':
-                content_output.clear_output()
-                with content_output:
-                    display(widgets.HBox([table_output, details_output]))
-                update_list_view(page_num)
+            """Update display based on selected view type."""
+            # Update button states first
+            prev_button.disabled = page_num == 0
+            next_button.disabled = page_num == total_pages - 1
+            page_input.value = str(page_num + 1)
+            
+            if view_type == 'View QC Molecules':
+                update_qc_grid_view(page_num)
             else:
-                update_grid_view(page_num)
+                update_rdkit_grid_view(page_num)
 
         def on_view_change(change):
+            """Handle view toggle changes."""
             if change.new != change.old:
                 update_view(change.new, current_page[0])
 
         def on_page_submit(event):
+            """Handle manual page number entry."""
             try:
                 new_page = int(page_input.value) - 1
                 if 0 <= new_page < total_pages:
@@ -307,10 +322,12 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
 
         def on_prev_clicked(b):
             current_page[0] = max(0, current_page[0] - 1)
+            page_input.value = str(current_page[0] + 1)  
             update_view(view_toggle.value, current_page[0])
-        
+
         def on_next_clicked(b):
             current_page[0] = min(total_pages - 1, current_page[0] + 1)
+            page_input.value = str(current_page[0] + 1)  
             update_view(view_toggle.value, current_page[0])
 
         # Wire up controls
@@ -333,7 +350,7 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         ])
         
         display(container)
-        update_view('List', 0)
+        update_view('View QC Molecules', 0)
     
     def _create_record_table(self):
         """Create a paginated table of records with clickable entries."""
@@ -465,14 +482,14 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
 
         def on_prev_clicked(b):
             current_page[0] = max(0, current_page[0] - 1)
-            page_input.value = str(current_page[0] + 1)
+            page_input.value = str(current_page[0] + 1)  
             prev_button.disabled = current_page[0] == 0
             next_button.disabled = False
             update_callback(current_page[0])
-        
+
         def on_next_clicked(b):
             current_page[0] = min(total_pages - 1, current_page[0] + 1)
-            page_input.value = str(current_page[0] + 1)
+            page_input.value = str(current_page[0] + 1) 
             prev_button.disabled = False
             next_button.disabled = current_page[0] == total_pages - 1
             update_callback(current_page[0])
@@ -649,10 +666,12 @@ class SinglePointRecordBrowser(BaseRecordBrowser):
 
         def on_prev_clicked(b):
             current_page[0] = max(0, current_page[0] - 1)
+            page_input.value = str(current_page[0] + 1)  # Add this
             update_table(current_page[0])
-        
+
         def on_next_clicked(b):
             current_page[0] = min(total_pages - 1, current_page[0] + 1)
+            page_input.value = str(current_page[0] + 1)  # Add this
             update_table(current_page[0])
 
         # Wire up controls
