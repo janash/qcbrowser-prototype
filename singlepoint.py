@@ -24,6 +24,7 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         super().__init__(dataset_processor)
         self._current_view = None
         self._output = widgets.Output()
+        self._num_headers = 0
     
     def create_header(self):
         """Create the dataset header display."""
@@ -107,7 +108,7 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         .widget-gridbox {
             border-collapse: collapse;
         }
-        .widget-gridbox > .widget-html:nth-child(-n+6) {
+        .widget-gridbox > .widget-html:nth-child(-n+{self._num_headers}) {
             border-bottom: 2px solid #000;
         }
         .widget-gridbox > .widget-html, .widget-gridbox > .widget-vbox {
@@ -124,32 +125,38 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         # Create headers
         headers = [widgets.HTML(f'<strong>{col}</strong>') for col in df.columns]
         grid_items = headers
+
+        self._num_headers = len(headers)
         
         for _, row in df.iterrows():
             for col, value in row.items():
-                if col == 'Properties':
+                if col == 'Properties' or col == 'Protocols':
                     # Create expandable properties button
-                    properties = value  # This is a list from the DataFrame
-                    container = widgets.VBox([
+                    try:
+                        properties = value.keys()
+                    except AttributeError:
+                        properties = value  
+                    properties_container = widgets.VBox([
                         widgets.Button(
-                            description=f"Properties ({len(properties)})",
+                            description=f"{col} ({len(properties)})",
                             layout=widgets.Layout(width='auto')
                         )
                     ])
+
 
                     output = widgets.Output()
                     with output:
                         print('\n'.join(properties))
                     output.layout.display = 'none'
-                    container.children = (*container.children, output)
+                    properties_container.children = (*properties_container.children, output)
 
                     def make_handler(out):
                         def handler(b):
                             out.layout.display = 'none' if out.layout.display == 'block' else 'block'
                         return handler
 
-                    container.children[0].on_click(make_handler(output))
-                    grid_items.append(container)
+                    properties_container.children[0].on_click(make_handler(output))
+                    grid_items.append(properties_container)
                 else:
                     grid_items.append(widgets.HTML(str(value)))
         
@@ -169,6 +176,7 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
         total_entries = self.dataset_processor.n_entries
         total_pages = (total_entries + PAGE_SIZE - 1) // PAGE_SIZE
         current_page = [0]
+        self._num_headers = 1
 
         # Check if we have any RDKit molecules
         sample_df = self.dataset_processor.get_entry_df(stop=5, get_rdkit=True)
@@ -362,6 +370,7 @@ class SinglePointDatasetBrowser(BaseDatasetBrowser):
                 stop=start_idx + PAGE_SIZE
             )
             specs = [col for col in df.columns if col != 'Entry Name']
+            self._num_headers = len(specs) + 1
             
             headers = [widgets.HTML('<div style="font-weight: bold; padding: 8px;">Entry</div>')]
             for spec in specs:
@@ -684,18 +693,32 @@ class SinglePointDatasetProcessor(BaseDatasetProcessor):
         """Return a DataFrame of specifications with protocols and properties."""
         specs_table = []
         specifications = deepcopy(self.ds.specifications)
+        status = self.ds.status()
 
         for v in specifications.values():
             protocols = {
                 k: str(v)
                 for k, v in v.specification.protocols.dict().items()
             }
+
+            records = status.get(v.name,0)
+            complete = 0
+            error = 0
+            invalid = 0
+
+            if records:
+                complete = status[v.name].get("complete", 0)
+                error = status[v.name].get("error", 0)
+                invalid = status[v.name].get("invalid", 0)
             
             row_data = [
                 v.name,
                 v.specification.program,
                 v.specification.method,
                 v.specification.basis,
+                complete,
+                error,
+                invalid,
                 protocols,
                 self.ds.computed_properties.get(v.name, [])
             ]
@@ -703,7 +726,7 @@ class SinglePointDatasetProcessor(BaseDatasetProcessor):
             
         return pd.DataFrame(
             specs_table,
-            columns=["Specification Name", "Program", "Method", "Basis", "Protocols", "Properties"]
+            columns=["Specification Name", "Program", "Method", "Basis", "Num Complete", "Num Error", "Num Invalid", "Protocols", "Properties"]
         )
     
     def get_entry_df(self, start=None, 
