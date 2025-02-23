@@ -10,6 +10,8 @@ See `demo.ipynb` for a demonstration of the pandas tools and widgets.
 
 ## Pandas DataFrame Tools
 
+The QCBrowser has both capabilities for building dataframes from datasets and widgets for visualizing and browsing datasets. See `demo.ipynb`.
+
 ## Widgets
 
 This repository contains code for dataframe tools and widgets for browsing datasets from QCArchive. 
